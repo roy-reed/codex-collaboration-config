@@ -14,6 +14,9 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# 本脚本把本机权威 AGENTS.md 按原始字节镜像到当前私有仓库。
+# 单次模式完成一次拉取、复制、提交、推送和远端校验；-Watch 模式持续检测源文件变化。
+# 设计原则：只处理 SourceMap 中明确列出的文件，遇到分叉、缺失或校验失败时停止，不猜测合并。
 $script:RepoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $workspaceRoot = Split-Path -Parent $script:RepoRoot
 $script:RuntimeDirectory = Join-Path $script:RepoRoot '.runtime'
@@ -21,6 +24,7 @@ $script:LogPath = Join-Path $script:RuntimeDirectory 'sync.log'
 $script:Utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 $script:GitExe = (Get-Command git -ErrorAction Stop).Source
 
+# 源文件与仓库镜像路径的唯一映射表；新增镜像项时必须先重新评估敏感性和长期保存价值。
 $script:SourceMap = @(
     [pscustomobject]@{
         Name = 'global'
@@ -36,6 +40,7 @@ $script:SourceMap = @(
     }
 )
 
+# 运行日志仅写入被 .gitignore 排除的 .runtime 目录，不作为配置镜像提交。
 function Write-RuntimeLog {
     param(
         [Parameter(Mandatory = $true)]
@@ -47,6 +52,7 @@ function Write-RuntimeLog {
     [System.IO.File]::AppendAllText($script:LogPath, $line, $script:Utf8NoBom)
 }
 
+# 统一封装 Git 调用：捕获 stdout/stderr，并仅接受调用方明确允许的退出码。
 function Invoke-Git {
     param(
         [Parameter(Mandatory = $true)]
@@ -86,6 +92,7 @@ function Get-FileSha256 {
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash
 }
 
+# 用“逻辑名称=SHA256”组成轻量状态串，监控模式据此判断源文件是否发生变化。
 function Get-SourceState {
     $items = foreach ($mapping in $script:SourceMap) {
         if (Test-Path -LiteralPath $mapping.Source -PathType Leaf) {
@@ -99,6 +106,7 @@ function Get-SourceState {
     return [string]::Join('|', [string[]]$items)
 }
 
+# 逐字节复制单个镜像文件，并在写入后再次核对 SHA-256，避免编码/BOM/换行被隐式改写。
 function Copy-ExactFile {
     param(
         [Parameter(Mandatory = $true)]
@@ -146,6 +154,7 @@ function Copy-ExactFile {
     return $true
 }
 
+# 执行一次完整同步。命名互斥锁确保同一用户会话内不会并发运行两个同步过程。
 function Invoke-OneShotSync {
     $mutex = [System.Threading.Mutex]::new($false, 'Local\CodexCollaborationConfigSync')
     $lockTaken = $false
@@ -162,6 +171,7 @@ function Invoke-OneShotSync {
             throw 'Another synchronization process is still running.'
         }
 
+        # 先验证工作树和远端；若允许拉取，则只接受 fast-forward，避免自动解决分叉。
         $repoCheck = Invoke-Git -Arguments @('rev-parse', '--is-inside-work-tree')
         if ($repoCheck.Output.Trim() -ne 'true') {
             throw "Not a Git work tree: $script:RepoRoot"
@@ -174,6 +184,7 @@ function Invoke-OneShotSync {
             Invoke-Git -Arguments @('pull', '--ff-only', 'origin', 'main') | Out-Null
         }
 
+        # 只复制并暂存 SourceMap 中的镜像路径，仓库内其他改动不会被夹带提交。
         $copied = @()
         foreach ($mapping in $script:SourceMap) {
             if (Copy-ExactFile -Mapping $mapping) {
@@ -192,6 +203,7 @@ function Invoke-OneShotSync {
             $committed = $true
         }
 
+        # 推送后对比本地 HEAD 与远端 main，确认远端确实接收到本次提交。
         $pushed = $false
         if (-not $NoPush) {
             if (-not $hasOrigin) {
@@ -230,6 +242,7 @@ function Invoke-OneShotSync {
     }
 }
 
+# 默认执行一次同步；只有显式传入 -Watch 才进入持续监控循环。
 if (-not $Watch) {
     Invoke-OneShotSync
     exit 0
@@ -238,6 +251,7 @@ if (-not $Watch) {
 Write-RuntimeLog -Message "watch_started poll_seconds=$PollSeconds debounce_seconds=$DebounceSeconds retry_seconds=$RetrySeconds"
 $lastSyncedState = $null
 
+# 监控循环采用“变化检测→防抖→一次同步→轮询/失败退避”，不进行高频 Git 操作。
 while ($true) {
     $currentState = Get-SourceState
     if ($currentState -eq $lastSyncedState) {
