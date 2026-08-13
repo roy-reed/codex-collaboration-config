@@ -92,6 +92,26 @@ GitHub 私有仓库
 
 运行日志位于 `.runtime/sync.log`，已被 Git 忽略。任务计划程序中的任务名为 `Codex-Collaboration-Config-Sync`。
 
+### 当前机器的 GitHub 网络路由
+
+当前 Windows 环境通过本机 Clash/Mihomo 的 `127.0.0.1:7897` 访问 GitHub。该地址只写入本仓库的 `.git/config`，不会提交到 GitHub，也不会影响其他仓库。代理端口变化时执行：
+
+```powershell
+git config --local http.https://github.com.proxy http://127.0.0.1:新端口
+```
+
+恢复直连时执行：
+
+```powershell
+git config --local --unset-all http.https://github.com.proxy
+```
+
+可用以下命令检查当前仓库实际采用的路由：
+
+```powershell
+git config --local --get-urlmatch http.proxy https://github.com/roy-reed/codex-collaboration-config.git
+```
+
 ## 安全边界
 
 - GitHub 仓库必须保持 Private。
