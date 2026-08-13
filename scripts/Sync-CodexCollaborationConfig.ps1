@@ -54,8 +54,17 @@ function Invoke-Git {
         [int[]]$AcceptedExitCodes = @(0)
     )
 
-    $rawOutput = @(& $script:GitExe -C $script:RepoRoot @Arguments 2>&1)
-    $exitCode = $LASTEXITCODE
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        # Windows PowerShell 5.1 turns redirected native stderr into an ErrorRecord.
+        # Capture it without allowing an expected non-zero Git probe to terminate.
+        $ErrorActionPreference = 'Continue'
+        $rawOutput = @(& $script:GitExe -C $script:RepoRoot @Arguments 2>&1)
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
     $outputText = [string]::Join([Environment]::NewLine, [string[]]$rawOutput)
 
     if ($AcceptedExitCodes -notcontains $exitCode) {
