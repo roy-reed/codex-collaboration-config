@@ -1,0 +1,11 @@
+.runtime/
+.tmp/
+.env
+.env.*
+*.log
+*.key
+*.pem
+*.pfx
+*.p12
+*.token
+credentials*
