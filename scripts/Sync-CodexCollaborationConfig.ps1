@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
     [switch]$Watch,
+    [switch]$HealthCheck,
     [ValidateRange(2, 3600)]
     [int]$PollSeconds = 5,
     [ValidateRange(1, 3600)]
@@ -19,7 +20,7 @@ $workspaceRoot = Split-Path -Parent $script:RepoRoot
 $script:RuntimeDirectory = Join-Path $script:RepoRoot '.runtime'
 $script:LogPath = Join-Path $script:RuntimeDirectory 'sync.log'
 $script:Utf8NoBom = [System.Text.UTF8Encoding]::new($false)
-$script:GitExe = (Get-Command git -ErrorAction Stop).Source
+$script:GitExe = $null
 
 $script:SourceMap = @(
     [pscustomobject]@{
@@ -53,6 +54,10 @@ function Invoke-Git {
         [string[]]$Arguments,
         [int[]]$AcceptedExitCodes = @(0)
     )
+
+    if ($null -eq $script:GitExe) {
+        $script:GitExe = (Get-Command git -ErrorAction Stop).Source
+    }
 
     $previousErrorActionPreference = $ErrorActionPreference
     try {
@@ -99,6 +104,51 @@ function Get-SourceState {
     return [string]::Join('|', [string[]]$items)
 }
 
+function Invoke-HealthCheck {
+    $issues = [System.Collections.Generic.List[string]]::new()
+
+    foreach ($mapping in $script:SourceMap) {
+        if (-not (Test-Path -LiteralPath $mapping.Source -PathType Leaf)) {
+            $null = $issues.Add("缺少源文件：$($mapping.Name)")
+            continue
+        }
+
+        if (-not (Test-Path -LiteralPath $mapping.Destination -PathType Leaf)) {
+            $null = $issues.Add("缺少镜像文件：$($mapping.Name)")
+            continue
+        }
+
+        if ((Get-FileSha256 -Path $mapping.Source) -ne (Get-FileSha256 -Path $mapping.Destination)) {
+            $null = $issues.Add("源文件与镜像不一致：$($mapping.Name)")
+        }
+    }
+
+    try {
+        $watchMutex = [System.Threading.Mutex]::OpenExisting('Global\CodexCollaborationConfigWatch')
+        $watchMutex.Dispose()
+    }
+    catch [System.Threading.WaitHandleCannotBeOpenedException] {
+        $null = $issues.Add('同步守护进程未运行')
+    }
+    catch {
+        $null = $issues.Add('无法读取同步守护进程状态')
+    }
+
+    if ($issues.Count -eq 0) {
+        return
+    }
+
+    $payload = @{
+        hookSpecificOutput = @{
+            hookEventName = 'SessionStart'
+            additionalContext = 'AGENTS 自动同步健康检查异常：{0}。请先检查计划任务和镜像状态。' -f ([string]::Join('；', $issues))
+        }
+    }
+
+    [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+    $payload | ConvertTo-Json -Depth 4 -Compress
+}
+
 function Copy-ExactFile {
     param(
         [Parameter(Mandatory = $true)]
@@ -120,13 +170,14 @@ function Copy-ExactFile {
     $destinationDirectory = Split-Path -Parent $Mapping.Destination
     [System.IO.Directory]::CreateDirectory($destinationDirectory) | Out-Null
     $temporaryPath = '{0}.sync-{1}.tmp' -f $Mapping.Destination, $PID
+    $backupPath = '{0}.sync-{1}.bak' -f $Mapping.Destination, $PID
 
     try {
         $bytes = [System.IO.File]::ReadAllBytes($Mapping.Source)
         [System.IO.File]::WriteAllBytes($temporaryPath, $bytes)
 
         if (Test-Path -LiteralPath $Mapping.Destination -PathType Leaf) {
-            [System.IO.File]::Replace($temporaryPath, $Mapping.Destination, $null, $true)
+            [System.IO.File]::Replace($temporaryPath, $Mapping.Destination, $backupPath, $true)
         }
         else {
             [System.IO.File]::Move($temporaryPath, $Mapping.Destination)
@@ -135,6 +186,9 @@ function Copy-ExactFile {
     finally {
         if (Test-Path -LiteralPath $temporaryPath -PathType Leaf) {
             Remove-Item -LiteralPath $temporaryPath -Force
+        }
+        if (Test-Path -LiteralPath $backupPath -PathType Leaf) {
+            Remove-Item -LiteralPath $backupPath -Force
         }
     }
 
@@ -147,7 +201,7 @@ function Copy-ExactFile {
 }
 
 function Invoke-OneShotSync {
-    $mutex = [System.Threading.Mutex]::new($false, 'Local\CodexCollaborationConfigSync')
+    $mutex = [System.Threading.Mutex]::new($false, 'Global\CodexCollaborationConfigSync')
     $lockTaken = $false
 
     try {
@@ -230,34 +284,52 @@ function Invoke-OneShotSync {
     }
 }
 
+if ($HealthCheck) {
+    Invoke-HealthCheck
+    exit 0
+}
+
 if (-not $Watch) {
     Invoke-OneShotSync
     exit 0
 }
 
-Write-RuntimeLog -Message "watch_started poll_seconds=$PollSeconds debounce_seconds=$DebounceSeconds retry_seconds=$RetrySeconds"
-$lastSyncedState = $null
+$createdNew = $false
+$watchMutex = [System.Threading.Mutex]::new($true, 'Global\CodexCollaborationConfigWatch', [ref]$createdNew)
+if (-not $createdNew) {
+    $watchMutex.Dispose()
+    throw 'Another synchronization watcher is already running.'
+}
 
-while ($true) {
-    $currentState = Get-SourceState
-    if ($currentState -eq $lastSyncedState) {
-        Start-Sleep -Seconds $PollSeconds
-        continue
-    }
+try {
+    Write-RuntimeLog -Message "watch_started poll_seconds=$PollSeconds debounce_seconds=$DebounceSeconds retry_seconds=$RetrySeconds"
+    $lastSyncedState = $null
 
-    Start-Sleep -Seconds $DebounceSeconds
-    $stableState = Get-SourceState
-    if ($stableState -ne $currentState) {
-        continue
-    }
+    while ($true) {
+        $currentState = Get-SourceState
+        if ($currentState -eq $lastSyncedState) {
+            Start-Sleep -Seconds $PollSeconds
+            continue
+        }
 
-    try {
-        Invoke-OneShotSync | Out-Null
-        $lastSyncedState = $stableState
-        Start-Sleep -Seconds $PollSeconds
+        Start-Sleep -Seconds $DebounceSeconds
+        $stableState = Get-SourceState
+        if ($stableState -ne $currentState) {
+            continue
+        }
+
+        try {
+            Invoke-OneShotSync | Out-Null
+            $lastSyncedState = $stableState
+            Start-Sleep -Seconds $PollSeconds
+        }
+        catch {
+            Write-RuntimeLog -Message "sync_failed message=$($_.Exception.Message)"
+            Start-Sleep -Seconds $RetrySeconds
+        }
     }
-    catch {
-        Write-RuntimeLog -Message "sync_failed message=$($_.Exception.Message)"
-        Start-Sleep -Seconds $RetrySeconds
-    }
+}
+finally {
+    $watchMutex.ReleaseMutex()
+    $watchMutex.Dispose()
 }

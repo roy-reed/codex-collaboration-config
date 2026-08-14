@@ -41,8 +41,9 @@ if ($null -eq $shellCommand) {
 
 $userId = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
 $quote = [char]34
-$arguments = '-NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File {0}{1}{0} -Watch' -f $quote, $syncScript
-$action = New-ScheduledTaskAction -Execute $shellCommand.Source -Argument $arguments -WorkingDirectory $repoRoot
+$conhost = Join-Path $env:SystemRoot 'System32\conhost.exe'
+$arguments = '--headless {0}{1}{0} -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File {0}{2}{0} -Watch' -f $quote, $shellCommand.Source, $syncScript
+$action = New-ScheduledTaskAction -Execute $conhost -Argument $arguments -WorkingDirectory $repoRoot
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $userId
 $principal = New-ScheduledTaskPrincipal -UserId $userId -LogonType Interactive -RunLevel Limited
 $settingsParameters = @{
@@ -76,5 +77,5 @@ $taskInfo = Get-ScheduledTaskInfo -TaskName $taskName
     State = $task.State
     LastRunTime = $taskInfo.LastRunTime
     LastTaskResult = $taskInfo.LastTaskResult
-    Executable = $shellCommand.Source
+    Executable = $conhost
 }
