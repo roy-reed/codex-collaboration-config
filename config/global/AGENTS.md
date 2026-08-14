@@ -17,7 +17,6 @@
 - Windows 优先 PowerShell 7；文件读写显式指定编码。小范围语义修改用 `apply_patch`，机械替换用 FastCtx `replace`，批处理用 Python/Node。关键非 Git 文件整写前备份，写后检查差异、乱码、编码和换行。
 - 每项任务只加载覆盖需求的最小 skill 集；用户点名必须使用，项目或格式专用 skill 优先。
 - 建议书图示用 `proposal-illustration-generator`；论文结构用 `research-paper-writing`，语言优化用 `academic-humanizer`，arXiv 检索用 `arxiv`。
-- 普通 PPT 或模板编辑用 `Presentations`；YAML、批量重建、抽取、音频、SVG 或明确 python-pptx 用 `powerpoint`。只改文字且其他 PPTX 资产须字节不变时，仅替换目标 OOXML 文本节点并验证其余 ZIP 条目。
 - 本地文件优先 FastCtx，终端优先 FastCtx `run`；只读任务不写入。网页思考只在用户明确要求或外部信息确有必要时启用。
 
 ## 子代理
