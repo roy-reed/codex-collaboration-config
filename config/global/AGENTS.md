@@ -38,3 +38,45 @@
 - 科研文字逐句优化并尽量保持篇幅，质量需要时可重构；段落和句式自然变化，不机械并列，不用固定否定转折句式或破折号，双引号仅用于逐字引用和准确术语。
 - 工具同等适用时偏好 Python/Jupyter、COMSOL、Ansys、MATLAB，任务适配性优先。
 - 中文参考文献未指定时暂用 GB/T 7714—2015；定稿或投稿前提醒确认目标格式。
+
+<!-- fastctx:begin -->
+## Local file inspection
+
+For reading, searching, and finding local files, prefer the FastCtx MCP
+server's own tools — `inspect_local_file`, `grep`, and `glob` — over shell
+equivalents such as `cat`/`Get-Content`, `rg`/`findstr`/`Select-String`,
+and `dir`/`ls -R`.
+Use FastCtx file tools directly for local-file operations, including when a
+local reference is URI-shaped; pass the equivalent plain absolute filesystem path.
+Read only what the task needs. When you need several files, pass them to
+one `inspect_local_file` call as files=[{"path": ...}, ...] instead of one
+call per file. The last line of every result says `Complete` or
+`Partial` — continue only with the exact parameters a `Partial` note
+provides.
+
+### Batch replacement
+
+Use FastCtx's `replace` for mechanical find-and-replace across files.
+It preserves each file's encoding and line endings, supports dry-run previews,
+and rejects concurrent changes before writing. Use apply_patch for generated
+content, semantic rewrites, or small local edits.
+
+### Shell commands
+
+Prefer FastCtx's `run` over the built-in shell for terminal work: it
+executes with bash (Git Bash on Windows), so always write POSIX bash —
+never PowerShell syntax.
+
+Never pass `apply_patch` to FastCtx's `run`: it is not a program and
+no shell can run it. Reach it through Codex itself — as its own tool
+call, or in Codex's built-in shell — never through the FastCtx tools.
+
+Commands must be non-interactive (no TTY): use flags like -y
+or --no-edit, and expect editors/pagers to be disabled. For anything
+that may outlast run's four-minute maximum, use `run_background`, check
+on it with `job_output`, and stop it with `job_kill`. Background jobs run
+independently of this session and survive restarts; rediscover an earlier
+job with `job_list` and read its output by job_id. A non-zero exit code is
+a normal result. The last line of every result says `Complete` or
+`Partial`.
+<!-- fastctx:end -->
