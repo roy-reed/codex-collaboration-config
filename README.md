@@ -1,6 +1,6 @@
 # Codex 协作配置镜像
 
-这是 Roy 的 Codex 协作规则的最小化、可审计、可恢复镜像。仓库只保存长期有效的协作规则与同步工具，不保存完整画像、原始报告、任务记录、附件、记忆、凭据或研究材料。
+这是 Roy 的 Codex 协作规则的最小化、可审计、可恢复镜像。仓库只保存经审查、可公开复用的协作规则与同步工具，不保存完整画像、原始报告、任务记录、附件、记忆、凭据或研究材料。
 
 ## 本轮改造结论
 
@@ -34,13 +34,13 @@
 ├─ config/global/AGENTS.md
 └─ config/projects/gpt-use-optimization/AGENTS.md
 
-        Git commit + push
+        Git commit + push（仅限已审查内容）
              ↓
 
-GitHub 私有仓库
+GitHub 公开仓库
 ```
 
-本机文件是唯一权威源，GitHub 是版本化备份和审计镜像。不要直接在 GitHub 网页编辑镜像文件；远端变更不会自动覆盖本机。同步遇到分叉时会停止，而不是猜测合并方向。
+本机文件是唯一权威源，GitHub 是公开的版本化备份和审计镜像。不要直接在 GitHub 网页编辑镜像文件；远端变更不会自动覆盖本机。同步遇到分叉时会停止，而不是猜测合并方向。公开前必须确认镜像内容不含个人、工作区或凭据数据。
 
 ## 仓库内容
 
@@ -48,6 +48,8 @@ GitHub 私有仓库
 - `config/projects/gpt-use-optimization/AGENTS.md`：当前工作区规则的逐字节镜像。
 - `scripts/Sync-CodexCollaborationConfig.ps1`：单次同步或持续监控。
 - `scripts/Install-CodexCollaborationSync.ps1`：安装或移除当前用户的登录时自动监控任务。
+- `scripts/Test-CodexCollaborationConfig.ps1`：检查仓库结构、Git 差异和常见敏感标记。
+- `CONTRIBUTING.md`、`SECURITY.md`：公开仓库的维护与安全边界。
 - `.gitattributes`：禁止 Git 改写两个镜像文件的换行，确保仓库中的字节与源文件一致。
 
 ## 同步流程
@@ -92,9 +94,9 @@ GitHub 私有仓库
 
 运行日志位于 `.runtime/sync.log`，已被 Git 忽略。任务计划程序中的任务名为 `Codex-Collaboration-Config-Sync`。
 
-### 当前机器的 GitHub 网络路由
+### GitHub 网络路由（仅限本机）
 
-当前 Windows 环境通过本机 Clash/Mihomo 的 `127.0.0.1:7897` 访问 GitHub。该地址只写入本仓库的 `.git/config`，不会提交到 GitHub，也不会影响其他仓库。代理端口变化时执行：
+本仓库不固定代理地址、驱动器字母或其他机器路径。需要代理时，只写入当前克隆目录的 `.git/config`，不要写入脚本、README 或其他仓库文件。代理端口变化时，在本地执行：
 
 ```powershell
 git config --local http.https://github.com.proxy http://127.0.0.1:新端口
@@ -106,7 +108,7 @@ git config --local http.https://github.com.proxy http://127.0.0.1:新端口
 git config --local --unset-all http.https://github.com.proxy
 ```
 
-可用以下命令检查当前仓库实际采用的路由：
+可用以下命令检查当前克隆实际采用的路由：
 
 ```powershell
 git config --local --get-urlmatch http.proxy https://github.com/roy-reed/codex-collaboration-config.git
@@ -114,11 +116,11 @@ git config --local --get-urlmatch http.proxy https://github.com/roy-reed/codex-c
 
 ## 安全边界
 
-- GitHub 仓库必须保持 Private。
+- 本仓库为公开仓库，只提交经过审查且适合公开的协作规则与工具。
 - 不提交令牌、Cookie、SSH 私钥、证书、`.env`、浏览器资料或 Git 凭据。
 - 不提交 `LUCS_Master_v2.0.md`、`Roy_精简运行画像.md`、原始报告、附件、备份、Codex 记忆或任务历史。
 - 不持久化单位、项目代号、敏感参数、未公开方案、人员或国防军事敏感信息。
-- 私有 GitHub 仍是第三方存储；新增镜像文件前必须重新判断其敏感性。
+- GitHub 是第三方公开存储；新增镜像文件前必须重新判断其敏感性。
 - `AGENTS.md` 是协作规则，不是操作系统级安全边界；权限和沙箱仍需单独配置与验证。
 
 ## 恢复原则
@@ -146,3 +148,8 @@ git config --local --get-urlmatch http.proxy https://github.com/roy-reed/codex-c
 - README 或脚本自身的改动在本仓库内正常提交，不纳入配置监控。
 - 新增项目级镜像前，先确认确有跨设备保存价值，避免把临时上下文和敏感材料带入长期仓库。
 - 简单任务继续直接执行；只有高风险或方向性未知触发完整的发现、决策和验证流程。
+- 提交前执行 `pwsh -NoProfile -File .\\scripts\\Test-CodexCollaborationConfig.ps1`，并确认 `git diff --check` 无输出。
+
+## 许可证
+
+本仓库采用 [MIT License](LICENSE)。其中的配置镜像与脚本仅代表公开、可复用的协作规则，不包含本机私密配置或凭据。

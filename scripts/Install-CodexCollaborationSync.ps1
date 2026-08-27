@@ -62,7 +62,7 @@ $registerParameters = @{
     Trigger = $trigger
     Principal = $principal
     Settings = $settings
-    Description = 'Near-real-time private GitHub mirror for Codex collaboration AGENTS.md files.'
+    Description = 'Near-real-time public GitHub mirror for reviewed Codex collaboration AGENTS.md files.'
     Force = $true
 }
 Register-ScheduledTask @registerParameters | Out-Null
