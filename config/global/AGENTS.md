@@ -18,6 +18,7 @@
 - 每项任务只加载覆盖需求的最小 skill 集；用户点名必须使用，项目或格式专用 skill 优先。
 - 建议书图示用 `proposal-illustration-generator`；论文结构用 `research-paper-writing`，语言优化用 `academic-humanizer`，arXiv 检索用 `arxiv`。
 - 本地文件优先 FastCtx，终端优先 FastCtx `run`；只读任务不写入。网页思考只在用户明确要求或外部信息确有必要时启用。
+- 涉及 ChatGPT 网页端与本地 Codex/OpenAI 模型双向分流时，使用 `research-web-model-router`：网页起点先经 Sol High；本地起点默认直做，仅在能无损交接且预计净节省 Work 额度时借用网页 Sol High；回传后简单任务优先 Luna、中等任务优先 Terra、最难任务才用 Sol Max，避免重复规划。
 
 ## 子代理
 
